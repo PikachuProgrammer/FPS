@@ -1,0 +1,204 @@
+task.wait(2)
+local RoomEntrances={game.Workspace:FindFirstChild("RoomEntrance").Position}
+
+local EnemyAI={}
+local coverSpot={
+	{position=game.Workspace:FindFirstChild("CoverSpot").Position,istaken=false}
+}
+local NPCs={}
+local NPC
+local humanoid
+local Animator
+local roomEntrance=false
+local findCover=false
+local NearestPlayer
+local continue=true
+local playerSpotted=false
+local i
+local GunShotSound=game.ReplicatedStorage.Sounds.GunFire 
+function EnemyAI.AddNPC(npc,num)
+	NPCs[num]=npc
+	for _, i in pairs(NPCs) do
+		EnemyAI.start(i)
+	end
+end
+function EnemyAI.start(npc,animator)
+	
+	NPC=npc
+	humanoid=npc.Humanoid
+	Animator=humanoid.Animator
+	
+	EnemyAI.LookForPlayer()
+	while playerSpotted do
+		EnemyAI.Shoot()
+	end
+end
+function EnemyAI.RoomEntranceFind()
+
+	local findCover=false
+
+	Animator=humanoid.Animator
+	humanoid.WalkSpeed=25
+	local position=RoomEntrances[1]
+	local path=game.PathfindingService:CreatePath()
+	path:ComputeAsync(NPC.HumanoidRootPart.Position,position)
+	local sprint=Animator:LoadAnimation(game.ReplicatedStorage.Animations.Sprint)
+
+	sprint:Play()	
+
+	for _,waypoint in pairs(path:GetWaypoints()) do
+		if continue then
+			EnemyAI.Stop()
+
+			humanoid:MoveTo(waypoint.Position)
+			humanoid.MoveToFinished:Wait()
+		end
+	end
+	--EnemyAI.FindCover()
+	sprint:Stop()
+
+	return
+end
+function EnemyAI.FindCover()
+
+	local position
+	local walk=Animator:LoadAnimation(game.ReplicatedStorage.Animations.Sprint)
+	local path=game.PathfindingService:CreatePath()
+	local i
+	for _,i in ipairs(coverSpot) do
+		if i.istaken then
+			print("Coverspot avalible")
+			position=i.position
+		end
+
+	end
+	position=coverSpot[1].position
+	walk:Play()
+	path:ComputeAsync(NPC.HumanoidRootPart.Position,position)
+	for _,waypoints in pairs(path:GetWaypoints()) do
+		if continue then
+			EnemyAI.Stop()
+
+			humanoid:MoveTo(waypoints.Position)
+			humanoid.MoveToFinished:Wait()
+		end
+	end
+	walk:Stop()
+
+
+	return
+
+end
+function EnemyAI.GetNearestPlayer()
+	local players=game.Players:GetPlayers()
+	local nearestPlayer
+	local nearestDistance=math.huge
+	for _,player in pairs(players) do
+		if player.Character then
+			local distance=(NPC.PrimaryPart.Position-player.Character.PrimaryPart.Position).Magnitude
+			if distance<nearestDistance then
+				nearestDistance=distance 
+				NearestPlayer=player
+			end
+		end
+	end
+	return NearestPlayer
+end
+
+function EnemyAI.Shoot()
+	local i=0
+	local shoot=Animator:LoadAnimation(game.ReplicatedStorage.Animations["NPC shooting"])
+	shoot:Play()
+	shoot.Looped=true
+
+	while i<25 do
+		GunShotSound:Play()
+		EnemyAI.GetNearestPlayer()
+
+		--local getUpToshoot=Animator:LoadAnimation(game.ReplicatedStorage.Animations["GetUpToShoot anim"])
+		--local shootPose=Animator:LoadAnimation(game.ReplicatedStorage.Animations["Ready to shoot anim"])
+		local character=NearestPlayer.Character
+		local direction =(character.HumanoidRootPart.Position-NPC.HumanoidRootPart.Position).Unit
+		NPC.HumanoidRootPart.CFrame=CFrame.new(NPC.HumanoidRootPart.Position,character.HumanoidRootPart.Position)
+		character.Humanoid.BreakJointsOnDeath=false
+		--shootPose:Play()
+		local raycast=RaycastParams.new()
+		raycast.FilterDescendantsInstances={NPC}
+		raycast.FilterType=Enum.RaycastFilterType.Exclude
+		local result=workspace:Raycast(NPC.LeftHand.Model.Flash.Position,direction*100,raycast)
+
+		if result then
+
+			local hitInstance = result.Instance
+			if hitInstance then
+
+				local humanoid = hitInstance.Parent:FindFirstChild("Humanoid")
+				if humanoid then
+					humanoid.Health -= 10
+				end
+			end
+		else
+		end
+
+		task.wait(.25)
+		i+=1
+	end
+end
+
+function EnemyAI.takeCover()
+	local crouch=Animator:LoadAnimation(game.ReplicatedStorage.Animations.Crouch)
+
+	crouch:Play()
+	task.wait(3)
+	crouch:Stop()
+end
+function EnemyAI.Stop()
+
+	local DISTANCE=(NPC.PrimaryPart.Position-NearestPlayer.Character.PrimaryPart.Position).Magnitude
+	if DISTANCE<5 then
+		continue=false
+		EnemyAI.Shoot()
+	end 
+	if DISTANCE>5 then
+		continue=true
+	end
+end
+function EnemyAI.LookForPlayer()
+	local waitAnim=Animator:LoadAnimation(game.ReplicatedStorage.Animations["NPC wait"])
+	waitAnim:Play()
+	for _, player in pairs(game.Players:GetPlayers()) do
+		local getUpToshoot=Animator:LoadAnimation(game.ReplicatedStorage.Animations["GetUpToShoot anim"])
+		local character = player.Character
+		local npcToPlayer= (NPC.Head.Position- character.Head.Position).Unit
+		local distance= (NPC.Head.Position- character.Head.Position).Magnitude
+
+		local lookVector=NPC.Head.CFrame.LookVector
+		local fov=lookVector:Dot(npcToPlayer)
+		local direction=(character.HumanoidRootPart.Position-NPC.HumanoidRootPart.Position).Unit
+		if fov<.96 and distance<37 then
+			local raycast=RaycastParams.new()
+			raycast.FilterDescendantsInstances={NPC}
+			raycast.FilterType=Enum.RaycastFilterType.Exclude
+			local result=workspace:Raycast(NPC.HumanoidRootPart.Position,direction*100,raycast)
+			
+			if result then
+				local hitInstance = result.Instance
+				if hitInstance then
+
+					local humanoid = hitInstance.Parent:FindFirstChild("Humanoid")
+					if humanoid then
+						print("player in sight")
+						NPC.Head.BillboardGui.TextLabel.Text="Enemy spotted!"
+						playerSpotted=true
+						game.ReplicatedStorage.Sounds.EnemySpotted:Play()
+					end
+				end
+			
+			end
+		end 
+
+	end
+	task.wait(.25)
+	return
+end
+return EnemyAI
